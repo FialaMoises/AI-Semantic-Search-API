@@ -3,10 +3,10 @@ package search
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
+	"sort"
 	"sync"
-
-	"github.com/DataIntelligenceCrew/go-faiss"
 )
 
 // Document represents a searchable document
@@ -22,35 +22,25 @@ type SearchResult struct {
 	Score    float32  `json:"score"`
 }
 
-// VectorStore manages the FAISS index and documents
+// VectorStore manages the vector index and documents
 type VectorStore struct {
-	index      *faiss.IndexImpl
-	documents  map[int64]Document
-	dimension  int
-	indexPath  string
-	mu         sync.RWMutex
-	nextID     int64
+	vectors   [][]float32
+	documents []Document
+	dimension int
+	indexPath string
+	mu        sync.RWMutex
 }
 
 // NewVectorStore creates a new vector store
 func NewVectorStore(dimension int, indexPath string) (*VectorStore, error) {
-	// Create index (L2 distance)
-	index, err := faiss.NewIndexFlatL2(dimension)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create FAISS index: %w", err)
-	}
-
 	vs := &VectorStore{
-		index:     index,
-		documents: make(map[int64]Document),
+		vectors:   make([][]float32, 0),
+		documents: make([]Document, 0),
 		dimension: dimension,
 		indexPath: indexPath,
-		nextID:    0,
 	}
 
-	// Try to load existing index
 	if err := vs.Load(); err != nil {
-		// If load fails, just use empty index (not an error for new deployments)
 		fmt.Printf("Starting with fresh index: %v\n", err)
 	}
 
@@ -66,31 +56,19 @@ func (vs *VectorStore) AddDocuments(docs []Document, embeddings [][]float32) err
 	vs.mu.Lock()
 	defer vs.mu.Unlock()
 
-	// Prepare vectors for FAISS
-	vectors := make([]float32, 0, len(embeddings)*vs.dimension)
-	for _, emb := range embeddings {
+	for i, emb := range embeddings {
 		if len(emb) != vs.dimension {
 			return fmt.Errorf("embedding dimension mismatch: got %d, expected %d", len(emb), vs.dimension)
 		}
-		vectors = append(vectors, emb...)
-	}
-
-	// Add to index
-	if err := vs.index.Add(vectors); err != nil {
-		return fmt.Errorf("failed to add to FAISS index: %w", err)
-	}
-
-	// Store documents
-	for i, doc := range docs {
-		vs.documents[vs.nextID] = doc
-		vs.nextID++
-		fmt.Printf("Added document %d: %s (ID: %s)\n", i, doc.Text[:min(50, len(doc.Text))], doc.ID)
+		vs.vectors = append(vs.vectors, emb)
+		vs.documents = append(vs.documents, docs[i])
+		fmt.Printf("Added document %d: %s (ID: %s)\n", i, truncate(docs[i].Text, 50), docs[i].ID)
 	}
 
 	return nil
 }
 
-// Search performs similarity search
+// Search performs similarity search using cosine similarity
 func (vs *VectorStore) Search(queryEmbedding []float32, topK int) ([]SearchResult, error) {
 	vs.mu.RLock()
 	defer vs.mu.RUnlock()
@@ -99,32 +77,55 @@ func (vs *VectorStore) Search(queryEmbedding []float32, topK int) ([]SearchResul
 		return nil, fmt.Errorf("query embedding dimension mismatch: got %d, expected %d", len(queryEmbedding), vs.dimension)
 	}
 
-	// Perform search
-	distances, ids, err := vs.index.Search(queryEmbedding, int64(topK))
-	if err != nil {
-		return nil, fmt.Errorf("FAISS search failed: %w", err)
+	if len(vs.vectors) == 0 {
+		return []SearchResult{}, nil
 	}
 
-	// Build results
-	results := make([]SearchResult, 0, len(ids))
-	for i, id := range ids {
-		if id == -1 {
-			// FAISS returns -1 for empty slots
-			continue
-		}
+	type scoredResult struct {
+		index int
+		score float32
+	}
 
-		doc, exists := vs.documents[id]
-		if !exists {
-			continue
+	scores := make([]scoredResult, len(vs.vectors))
+	for i, vec := range vs.vectors {
+		scores[i] = scoredResult{
+			index: i,
+			score: cosineSimilarity(queryEmbedding, vec),
 		}
+	}
 
-		results = append(results, SearchResult{
-			Document: doc,
-			Score:    distances[i],
-		})
+	sort.Slice(scores, func(i, j int) bool {
+		return scores[i].score > scores[j].score
+	})
+
+	limit := topK
+	if limit > len(scores) {
+		limit = len(scores)
+	}
+
+	results := make([]SearchResult, limit)
+	for i := 0; i < limit; i++ {
+		results[i] = SearchResult{
+			Document: vs.documents[scores[i].index],
+			Score:    scores[i].score,
+		}
 	}
 
 	return results, nil
+}
+
+// cosineSimilarity calculates cosine similarity between two vectors
+func cosineSimilarity(a, b []float32) float32 {
+	var dotProduct, normA, normB float32
+	for i := range a {
+		dotProduct += a[i] * b[i]
+		normA += a[i] * a[i]
+		normB += b[i] * b[i]
+	}
+	if normA == 0 || normB == 0 {
+		return 0
+	}
+	return dotProduct / (float32(math.Sqrt(float64(normA))) * float32(math.Sqrt(float64(normB))))
 }
 
 // Save persists the index and documents to disk
@@ -132,23 +133,17 @@ func (vs *VectorStore) Save() error {
 	vs.mu.RLock()
 	defer vs.mu.RUnlock()
 
-	// Save FAISS index
-	if err := faiss.WriteIndex(vs.index, vs.indexPath); err != nil {
-		return fmt.Errorf("failed to save FAISS index: %w", err)
-	}
-
-	// Save documents metadata
-	metadataPath := vs.indexPath + ".meta"
 	data, err := json.Marshal(map[string]interface{}{
+		"vectors":   vs.vectors,
 		"documents": vs.documents,
-		"nextID":    vs.nextID,
+		"dimension": vs.dimension,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to marshal metadata: %w", err)
+		return fmt.Errorf("failed to marshal index: %w", err)
 	}
 
-	if err := os.WriteFile(metadataPath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write metadata: %w", err)
+	if err := os.WriteFile(vs.indexPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write index: %w", err)
 	}
 
 	fmt.Printf("Saved index with %d documents\n", len(vs.documents))
@@ -160,37 +155,24 @@ func (vs *VectorStore) Load() error {
 	vs.mu.Lock()
 	defer vs.mu.Unlock()
 
-	// Load FAISS index
-	index, err := faiss.ReadIndex(vs.indexPath)
+	data, err := os.ReadFile(vs.indexPath)
 	if err != nil {
-		return fmt.Errorf("failed to load FAISS index: %w", err)
-	}
-	vs.index = index
-
-	// Load documents metadata
-	metadataPath := vs.indexPath + ".meta"
-	data, err := os.ReadFile(metadataPath)
-	if err != nil {
-		return fmt.Errorf("failed to read metadata: %w", err)
+		return fmt.Errorf("failed to read index: %w", err)
 	}
 
-	var metadata struct {
-		Documents map[string]Document `json:"documents"`
-		NextID    int64               `json:"nextID"`
+	var indexData struct {
+		Vectors   [][]float32 `json:"vectors"`
+		Documents []Document  `json:"documents"`
+		Dimension int         `json:"dimension"`
 	}
 
-	if err := json.Unmarshal(data, &metadata); err != nil {
-		return fmt.Errorf("failed to unmarshal metadata: %w", err)
+	if err := json.Unmarshal(data, &indexData); err != nil {
+		return fmt.Errorf("failed to unmarshal index: %w", err)
 	}
 
-	// Convert string keys back to int64
-	vs.documents = make(map[int64]Document)
-	for k, v := range metadata.Documents {
-		var id int64
-		fmt.Sscanf(k, "%d", &id)
-		vs.documents[id] = v
-	}
-	vs.nextID = metadata.NextID
+	vs.vectors = indexData.Vectors
+	vs.documents = indexData.Documents
+	vs.dimension = indexData.Dimension
 
 	fmt.Printf("Loaded index with %d documents\n", len(vs.documents))
 	return nil
@@ -203,9 +185,9 @@ func (vs *VectorStore) GetDocumentCount() int {
 	return len(vs.documents)
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
 	}
-	return b
+	return s[:maxLen]
 }
