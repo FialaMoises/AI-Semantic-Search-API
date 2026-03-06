@@ -334,7 +334,7 @@ Configure retry logic ou use `text-embedding-3-small` (mais barato).
 
 ## Licença
 
-MIT
+Eu deixo usarem
 
 ## Contribuindo
 
