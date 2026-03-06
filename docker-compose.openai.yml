@@ -1,0 +1,19 @@
+# Docker Compose override for OpenAI embeddings
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.openai.yml up
+
+version: '3.8'
+
+services:
+  api:
+    environment:
+      - EMBEDDING_PROVIDER=openai
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=text-embedding-3-small
+      - FAISS_DIMENSION=1536  # OpenAI embedding dimension
+    # No dependency on embedding-service when using OpenAI
+    depends_on: []
+
+  # Disable local embedding service
+  embedding-service:
+    profiles:
+      - disabled

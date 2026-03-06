@@ -1,0 +1,35 @@
+# Git
+.git
+.gitignore
+
+# Environment
+.env
+.env.local
+
+# Data
+data/
+*.index
+
+# Documentation
+README.md
+*.md
+
+# IDE
+.vscode
+.idea
+*.swp
+
+# Build artifacts
+bin/
+dist/
+*.exe
+
+# Tests
+*_test.go
+test/
+
+# CI/CD
+.github/
+
+# Examples
+examples/

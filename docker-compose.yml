@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  # Python Embedding Service (Local/Free)
+  embedding-service:
+    build:
+      context: ./embedding-service
+      dockerfile: Dockerfile
+    container_name: embedding-service
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - semantic-search
+
+  # Go API Service
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: semantic-search-api
+    ports:
+      - "8080:8080"
+    environment:
+      - EMBEDDING_PROVIDER=local
+      - EMBEDDING_SERVICE_URL=http://embedding-service:8001
+      - API_PORT=8080
+      - FAISS_INDEX_PATH=/app/data/faiss.index
+      - FAISS_DIMENSION=384
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      embedding-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - semantic-search
+
+networks:
+  semantic-search:
+    driver: bridge
+
+volumes:
+  data:
