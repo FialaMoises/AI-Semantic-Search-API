@@ -1,6 +1,11 @@
-# AI Semantic Search API
+# 🔍 AI Semantic Search API
 
-Uma API de busca semântica inteligente usando embeddings vetoriais e banco vetorial FAISS.
+[![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://go.dev/)
+[![Python Version](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat&logo=python&logoColor=white)](https://python.org/)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat&logo=docker&logoColor=white)](https://www.docker.com/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+Uma API de busca semântica inteligente usando embeddings vetoriais e busca por similaridade.
 
 ## O que ela faz
 
@@ -13,7 +18,7 @@ Uma API de busca semântica inteligente usando embeddings vetoriais e banco veto
 
 - **Go** - Backend API performático
 - **Gin** - Framework web
-- **FAISS** - Banco vetorial (Facebook AI Similarity Search)
+- **Vector Search** - Busca por similaridade (cosine similarity)
 - **sentence-transformers** - Embeddings locais (gratuito)
 - **OpenAI API** - Embeddings premium (opcional)
 - **Docker** - Containerização
@@ -36,8 +41,8 @@ Uma API de busca semântica inteligente usando embeddings vetoriais e banco veto
        │              │
        ▼              ▼
 ┌─────────────┐  ┌──────────────┐
-│  Embeddings │  │    FAISS     │
-│   Provider  │  │ Vector Store │
+│  Embeddings │  │    Vector    │
+│   Provider  │  │    Store     │
 └─────────────┘  └──────────────┘
   │         │
   ▼         ▼
@@ -47,20 +52,21 @@ Uma API de busca semântica inteligente usando embeddings vetoriais e banco veto
 ## Estrutura do Projeto
 
 ```
-ai-semantic-search/
-├── cmd/
-│   └── api/              # Entry point da aplicação
+ai-semantic-search-api/
+├── api/                  # Entry point da aplicação
 ├── internal/
 │   ├── api/              # Handlers e rotas HTTP
 │   ├── config/           # Configurações
 │   ├── embeddings/       # Provedores de embeddings
-│   └── search/           # FAISS vector store
+│   └── search/           # Vector store (cosine similarity)
 ├── embedding-service/    # Microserviço Python
 │   ├── main.py
 │   ├── requirements.txt
 │   └── Dockerfile
-├── data/                 # Índices FAISS (persistência)
+├── data/                 # Índices vetoriais (persistência)
+├── examples/             # Scripts de teste
 ├── docker-compose.yml
+├── QUICKSTART.md
 └── README.md
 ```
 
@@ -103,7 +109,6 @@ docker-compose -f docker-compose.yml -f docker-compose.openai.yml up -d
 **Pré-requisitos:**
 - Go 1.21+
 - Python 3.11+
-- GCC/G++ (para compilar FAISS bindings)
 
 ```bash
 # 1. Instale dependências Go
@@ -119,7 +124,7 @@ cd ..
 cp .env.example .env
 
 # 4. Rode a API
-go run ./cmd/api
+go run ./api
 ```
 
 ## Uso da API
@@ -219,7 +224,7 @@ curl -X POST http://localhost:8080/api/v1/search \
 - Fácil alternância via env vars
 
 ✅ **Busca vetorial eficiente**
-- FAISS para busca rápida em milhões de vetores
+- Cosine similarity para busca semântica
 - Persistência automática do índice
 
 ✅ **API REST completa**
@@ -256,8 +261,8 @@ OPENAI_MODEL=text-embedding-3-small
 # API
 API_PORT=8080
 
-# FAISS
-FAISS_INDEX_PATH=./data/faiss.index
+# Vector Store
+FAISS_INDEX_PATH=./data/vector.index
 FAISS_DIMENSION=384  # 384 para local, 1536 para OpenAI
 ```
 
@@ -306,7 +311,7 @@ curl http://localhost:8001/health
 docker-compose restart embedding-service
 ```
 
-### Erro: "failed to create FAISS index"
+### Erro: "failed to create index"
 
 ```bash
 # Verifique permissões da pasta data
@@ -332,9 +337,9 @@ Configure retry logic ou use `text-embedding-3-small` (mais barato).
 - [ ] Testes unitários e de integração
 - [ ] CI/CD pipeline
 
-## Licença
+## 📄 Licença
 
-Eu deixo usarem
+MIT License - sinta-se livre para usar em seus projetos!
 
 ## Contribuindo
 
@@ -342,4 +347,4 @@ Pull requests são bem-vindos! Para mudanças grandes, abra uma issue primeiro.
 
 ---
 
-**Desenvolvido com Go, FAISS e IA** 🚀
+**Desenvolvido com Go, Python e IA** 🚀
